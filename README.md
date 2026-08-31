@@ -78,6 +78,11 @@ than two distinct clients sharing a profile.
 **Target encoding.** `y` (`yes`/`no`) is converted to `y_bin` (1/0) so that a mean
 over the column gives the conversion rate directly.
 
+## **How will we prevent data leakage?**
+`duration` is excluded from all models. It is recorded only after
+the call ends, when the outcome is already known, so it cannot exist at scoring time.
+
+
 
 
 
