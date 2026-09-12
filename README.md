@@ -82,6 +82,40 @@ over the column gives the conversion rate directly.
 `duration` is excluded from all models. It is recorded only after
 the call ends, when the outcome is already known, so it cannot exist at scoring time.
 
+## **What preprocessing is needed?**
+
+Different model families need different preprocessing, so each gets its own pipeline
+rather than sharing one transformed matrix.
+
+**Trees (Decision Tree, XGBoost)** need categorical encoding and nothing else.
+`OrdinalEncoder` assigns an arbitrary integer per category, which is harmless here
+because trees split on thresholds. Numeric features pass through unchanged — scaling
+and skew correction have no effect on threshold-based splits, and all three
+macroeconomic features can be kept despite their mutual correlation.
+
+**Linear models and kNN** need the full treatment. One-hot encoding, since ordinal
+integers would imply a false ordering. `log1p` on `campaign` and `previous` to compress
+the right tail. `StandardScaler` so that features on different scales contribute
+comparably. Only one of `emp.var.rate`, `euribor3m` and `nr.employed` is kept — they
+correlate at 0.91–0.97, which destabilises coefficients.
+
+**Dropped from all models:** `duration` (leakage), `pdays` and `pdays_clean`
+(correlations −1.00 and 0.87 with `was_contacted_before`). 19 features remain.
+
+**Class imbalance** is handled by weighting rather than resampling:
+`class_weight='balanced'` for sklearn models, `scale_pos_weight=7.88` for XGBoost.
+
+
+| model                      | params                                   |   pr_auc_train |   pr_auc_val |   pr_auc_gap |   roc_auc_train |   roc_auc_val | comment                                                                                                          |
+|:---------------------------|:-----------------------------------------|---------------:|-------------:|-------------:|----------------:|--------------:|:-----------------------------------------------------------------------------------------------------------------|
+| XGBoost + Hyperopt         | lr=0.021, depth=8, n_est=353, mcw=18     |         0.5745 |       0.4735 |       0.101  |          0.8863 |        0.8023 | Best on validation. Selected as final model.                                                                     |
+| XGBoost + RandomizedSearch | lr=0.013, depth=7, n_est=252, gamma=3.03 |         0.5568 |       0.4724 |       0.0845 |          0.8579 |        0.8034 | Equivalent to Hyperopt within CV noise (0.4675 vs 0.4711). Smaller gap.                                          |
+| Logistic Regression        | balanced, L2, C=1.0                      |         0.4389 |       0.4374 |       0.0015 |          0.7902 |        0.7918 | Near-zero gap. Strong for its simplicity — one-hot recovers the non-monotonic age effect through job categories. |
+| Decision Tree              | max_depth=6, balanced                    |         0.4528 |       0.4318 |       0.021  |          0.7916 |        0.7853 | Interpretable baseline. Depth beyond 6 degrades validation.                                                      |
+| kNN                        | k=25, euclidean                          |         0.4763 |       0.4305 |       0.0458 |          0.8481 |        0.773  | On par with the tree despite no class weighting. Slow at inference.                                              |
+| XGBoost, no macro          | same params, macro dropped               |         0.5115 |       0.4254 |       0.0861 |          0.8519 |        0.7718 | Diagnostic, not a candidate. Isolates client-level signal: −10% PR-AUC.                                          |
+| XGBoost                    | defaults, spw=7.88                       |         0.7519 |       0.4174 |       0.3345 |          0.9421 |        0.7606 | Defaults overfit badly (gap 0.34) and lose to a depth-6 tree. Shows what tuning is for.                          |
+
 
 
 
