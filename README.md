@@ -39,9 +39,9 @@ Used to compare models once a threshold is chosen; not used for model selection.
 
 ## **How do the model performance metrics align with business goals?**
 
-The model is used to rank the client base; operators call from the top down untilcapacity runs out. That makes ranking quality the property to optimise, which is why a ranking metric PR-AUC is primary.
+The model is used to rank the client base; operators call from the top down until capacity runs out. That makes ranking quality the property to optimise, which is why a ranking metric PR-AUC is primary.
 
-Lift in the top decile is the point where this becomes measurable in the callcentre's own terms. PR-AUC says the ranking improved; lift says by how much thebest-scored clients outperform untargeted dialling.
+Lift in the top decile is the point where this becomes measurable in the call centre's own terms. PR-AUC says the ranking improved; lift says by how much the best-scored clients outperform untargeted dialling.
 
 ## **What is the data cleaning process?**
 
@@ -105,7 +105,37 @@ correlate at 0.91–0.97, which destabilises coefficients.
 **Class imbalance** is handled by weighting rather than resampling:
 `class_weight='balanced'` for sklearn models, `scale_pos_weight=7.88` for XGBoost.
 
+## **What is the validation schema?**
 
+Stratified random split 70/15/15: 28,823 / 6,176 / 6,177 rows, positive rate 0.1127 in
+all three parts. Hyperparameters are selected by 5-fold StratifiedKFold CV inside the
+training set; validation compares model families; test is opened once, at the end.
+
+The reconstructed monthly timeline shows a change in call-centre behaviour rather than
+client behaviour. Through May 2009 the bank dialled thousands per month at 6.7%
+conversion; from June 2009 volumes collapsed to a few hundred while conversion rose to
+44.5%. The first regime is 36,214 rows, the second only 4,962.
+
+This makes a temporal split unusable: a chronological test block would consist almost
+entirely of the second regime, which training would never see. That measures
+extrapolation to an unseen operating mode, not ranking quality.
+
+## **How do the two tuning methods compare?**
+
+| Method | Best CV PR-AUC | Runtime |
+|---|---|---|
+| RandomizedSearchCV | 0.4675 | ~46s |
+| Hyperopt (TPE) | 0.4711 | ~71s |
+
+Same seven-parameter space, same CV scheme, 50 evaluations each. The difference is well
+inside the CV standard deviation (~0.015), so the methods are equivalent here. They
+converged on different parameter sets — random search picked `min_child_weight=3`,
+Hyperopt picked 18 — which points to a flat objective surface rather than a sharp
+optimum.
+
+## **Which models were trained, and how do they compare?**
+
+Four model families, plus tuning variants. All metrics on validation; test is held out.
 | model                      | params                                   |   pr_auc_train |   pr_auc_val |   pr_auc_gap |   roc_auc_train |   roc_auc_val | comment                                                                                                          |
 |:---------------------------|:-----------------------------------------|---------------:|-------------:|-------------:|----------------:|--------------:|:-----------------------------------------------------------------------------------------------------------------|
 | XGBoost + Hyperopt         | lr=0.021, depth=8, n_est=353, mcw=18     |         0.5745 |       0.4735 |       0.101  |          0.8863 |        0.8023 | Best on validation. Selected as final model.                                                                     |
