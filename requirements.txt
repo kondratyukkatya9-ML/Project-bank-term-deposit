@@ -7,4 +7,4 @@ seaborn==0.13.2
 shap==0.51.0
 tabulate==0.10.0
 numpy==2.3.5
-xgboost==2.1.0
+xgboost==3.2.0
