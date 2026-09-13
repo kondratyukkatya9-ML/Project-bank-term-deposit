@@ -133,6 +133,109 @@ converged on different parameter sets — random search picked `min_child_weight
 Hyperopt picked 18 — which points to a flat objective surface rather than a sharp
 optimum.
 
+## **Which features does the model rely on, and is that priority sensible?**
+
+Gain importance puts `nr.employed` at 0.53 — more than every other feature combined.
+The five macroeconomic features account for ~72% of the total.
+
+Causally plausible, operationally close to useless: `nr.employed` is a quarterly figure,
+identical for every client scored on the same day, so it cannot rank anyone. The model
+answers "is this a good period for a campaign?" rather than "which client to call
+first?".
+
+Retraining without the macro block costs 10% PR-AUC (0.4735 → 0.4254) — far less than
+their 72% importance suggests. But it does not remove the temporal signal: `month` rises
+from 12th to 2nd in SHAP importance, and the model reconstructs the period from the
+calendar instead.
+
+`month` is not seasonality. Each calendar month appears two or three times, and
+conversion tracks the order of appearance: June converts at 0.04, 0.37 and 0.47 across
+its three appearances. A future July would carry no stable meaning.
+
+## **What does SHAP show?**
+
+Direction, which gain importance does not give.
+
+Low `nr.employed` pushes predictions up by +0.5 to +1.6; high values pull them down by
+~0.4. Among client features `campaign` is the strongest and it is negative — high call
+counts push predictions to −2.0, making repeated contact the clearest marker of a
+hopeless lead. `was_contacted_before` and `poutcome = success` push the other way.
+
+`age` shows no consistent colour pattern: both young and old clients contribute
+positively, the U-shape found in EDA.
+
+## **How was the classification threshold chosen?**
+
+| Threshold | Calls | Precision | Recall | F1 |
+|---|---|---|---|---|
+| 0.30 | 3,008 | 0.189 | 0.818 | 0.307 |
+| 0.40 | 1,695 | 0.291 | 0.708 | 0.412 |
+| 0.50 | 1,177 | 0.381 | 0.645 | 0.479 |
+| 0.60 | 944 | 0.440 | 0.596 | 0.506 |
+| 0.70 | 768 | 0.474 | 0.523 | 0.497 |
+
+F1 peaks at 0.60, but weights precision and recall equally, which contradicts the cost
+asymmetry. 0.50 is chosen: F1 close to the maximum with recall 5 points higher.
+
+Beyond that the list stops paying: moving from 0.60 to 0.40 adds 751 calls for 78
+subscriptions — 10.4% marginal conversion, no better than untargeted dialling.
+
+## **Where does the model fail?**
+
+Missed subscribers (FN) against caught ones (TP) at threshold 0.5:
+
+| | FN (247) | TP (449) |
+|---|---|---|
+| Mean predicted probability | 0.30 | 0.81 |
+| Mean `campaign` | 2.53 | 1.71 |
+| Share with prior contact | **0.00** | 0.31 |
+| Mean `euribor3m` | 3.90 | 1.09 |
+
+**Every missed subscriber is a first-contact client** — exactly 0.00, in both model
+variants. The model handles clients with history almost perfectly and fails on everyone
+else, where the dataset offers only demographics.
+
+**Errors concentrate in the mass-dialling regime.** The no-macro model shows the same
+pattern (3.29 vs 1.22) despite never seeing `euribor3m`, confirming it reconstructs the
+period through `month`.
+
+**Misses are near-misses** — mean probability 0.30 against a 0.5 threshold.
+
+## **Final result**
+
+XGBoost tuned with Hyperopt, evaluated once on the held-out test set.
+
+| Metric | Validation | Test |
+|---|---|---|
+| PR-AUC | 0.4735 | 0.4896 |
+| ROC-AUC | 0.8024 | 0.8159 |
+| Precision @0.5 | 0.381 | 0.410 |
+| Recall @0.5 | 0.645 | 0.644 |
+
+Test slightly exceeds validation, indicating no overfitting to the validation set during
+selection.
+
+Out of 6,177 clients the model recommends 1,092 calls — 18% of the base — capturing
+64.4% of all subscribers at 41.0% conversion against an 11.3% baseline.
+
+## **What would improve this solution?**
+
+**Separate models per campaign regime.** The dataset contains two operations: mass
+dialling (36,214 rows, 6.7%) and selective targeting (4,962 rows, 44.5%). A single model
+spends most of its capacity distinguishing them instead of ranking clients. The regime
+should be set by the business, not inferred from macro indicators.
+
+**Drop period-encoding features.** `month` and the macro block carry campaign phase
+rather than client properties.
+
+**Collect what is missing.** The year; a control group of ~5% left uncalled, to measure
+organic conversion and enable uplift modelling; deposit size; a client identifier.
+
+**Calibrate probabilities.** Class weighting inflates them, which matters once the
+threshold is derived from costs rather than chosen empirically.
+
+
+
 ## **Which models were trained, and how do they compare?**
 
 Four model families, plus tuning variants. All metrics on validation; test is held out.
@@ -146,7 +249,15 @@ Four model families, plus tuning variants. All metrics on validation; test is he
 | XGBoost, no macro          | same params, macro dropped               |         0.5115 |       0.4254 |       0.0861 |          0.8519 |        0.7718 | Diagnostic, not a candidate. Isolates client-level signal: −10% PR-AUC.                                          |
 | XGBoost                    | defaults, spw=7.88                       |         0.7519 |       0.4174 |       0.3345 |          0.9421 |        0.7606 | Defaults overfit badly (gap 0.34) and lose to a depth-6 tree. Shows what tuning is for.                          |
 
+## **How to reproduce**
 
+```bash
+git clone https://github.com/kondratyukkatya9-ML/Project-bank-term-deposit.git
+cd Project-bank-term-deposit
+conda create -n bank python=3.11 -y && conda activate bank
+pip install -r requirements.txt
+jupyter lab notebooks/bank_marketing.ipynb
+```
 
 
 
