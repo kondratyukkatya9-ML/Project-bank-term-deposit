@@ -209,8 +209,10 @@ XGBoost tuned with Hyperopt, evaluated once on the held-out test set.
 |---|---|---|
 | PR-AUC | 0.4735 | 0.4896 |
 | ROC-AUC | 0.8024 | 0.8159 |
+| Gini | 0.6048 | 0.6318 |
 | Precision @0.5 | 0.381 | 0.410 |
 | Recall @0.5 | 0.645 | 0.644 |
+| F1 @0.5 | 0.479 | 0.501 |
 
 Test slightly exceeds validation, indicating no overfitting to the validation set during
 selection.
